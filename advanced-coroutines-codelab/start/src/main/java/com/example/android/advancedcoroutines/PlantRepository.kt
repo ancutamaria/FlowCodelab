@@ -24,7 +24,8 @@ import com.example.android.advancedcoroutines.util.CacheOnSuccess
 import com.example.android.advancedcoroutines.utils.ComparablePair
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,9 +44,27 @@ class PlantRepository private constructor(
 ) {
 
 
-    private var plansListSortOrderCache =
+    private var plantsListSortOrderCache =
             CacheOnSuccess(onErrorFallback = { listOf<String>()}){
                 plantService.customPlantSortOrder()
+            }
+
+//    private val customSortFlow = flow {
+//        emit(plansListSortOrderCache.getOrAwait())
+//    }
+
+    private val customSortFlow = plantsListSortOrderCache::getOrAwait.asFlow()
+        .onStart {
+            emit(listOf())
+            delay(1500)
+        }
+        .flowOn(defaultDispatcher)
+        .conflate()
+
+    val plantsFlow: Flow<List<Plant>>
+        get() =  plantDao.getPlantsFlow()
+            .combine(customSortFlow) { plants, sortOrder ->
+                plants.applySort(sortOrder)
             }
 
     private fun List<Plant>.applySort(customSortOrder: List<String>): List<Plant> {
@@ -65,8 +84,6 @@ class PlantRepository private constructor(
                 this@applyMainSafeSort.applySort(customSortOrder)
             }
 
-    val plantsFlow: Flow<List<Plant>>
-            get() =  plantDao.getPlantsFlow()
 
     fun getPlantsWithGrowZoneFlow(growZone: GrowZone) =
             plantDao.getPlantsWithGrowZoneNumber(growZone.number)
@@ -78,7 +95,7 @@ class PlantRepository private constructor(
     //val plants = plantDao.getPlants()
     val plants: LiveData<List<Plant>> = liveData {
         val plantsLiveData = plantDao.getPlants()
-        val customSortOrder = plansListSortOrderCache.getOrAwait()
+        val customSortOrder = plantsListSortOrderCache.getOrAwait()
         emitSource(plantsLiveData.map {
             plantList -> plantList.applySort(customSortOrder)
         })
